@@ -1,5 +1,5 @@
 # Use the desired Go version
-FROM golang:1.24.1
+FROM golang:1.24.2
 
 # Set the working directory inside the container
 WORKDIR /app
