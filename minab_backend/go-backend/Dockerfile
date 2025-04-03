@@ -7,8 +7,6 @@ WORKDIR /app
 # Copy all Go files into the container
 COPY . .
 
-# Install any dependencies (including Go modules)
-RUN go mod tidy
 
 # Build the Go application
 RUN go build -o main .

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/hasura/go-graphql-client"
+	graphql "github.com/hasura/go-graphql-client"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -52,6 +52,7 @@ type GetUserByEmailQuery struct {
 	} `graphql:"users(where: {email: {_eq: $email}})"`
 }
 
+
 func main() {
 	_ = godotenv.Load()
 
@@ -68,7 +69,7 @@ func main() {
 	graphqlClient = graphql.NewClient(hasuraEndpoint, httpClient)
 
 	http.HandleFunc("/signup", enableCors(signupHandler))
-	http.HandleFunc("/login", enableCors(loginHandler))
+	http.HandleFunc("/login", enableCors(loginHandler)) // ✅ Action-ready login
 
 	log.Println("✅ Server running on http://localhost:8082")
 	http.ListenAndServe(":8082", nil)
@@ -87,28 +88,13 @@ func signupHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var query GetUserByEmailQuery
-	vars := map[string]interface{}{
-		"email": graphql.String(req.Email),
-	}
-
-	// Check if the email already exists
-	err = graphqlClient.Query(context.Background(), &query, vars)
-	if err != nil || len(query.Users) > 0 {
-		http.Error(w, "Email already exists", http.StatusBadRequest)
-		return
-	}
-
-	// Hash the password
 	hashed, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		http.Error(w, "Error hashing password", http.StatusInternalServerError)
 		return
 	}
 
-	// Insert user into Hasura
-	var mutation UserInsertMutation
-	vars = map[string]interface{}{
+	vars := map[string]interface{}{
 		"object": users_insert_input{
 			Name:         req.Name,
 			Email:        req.Email,
@@ -116,10 +102,11 @@ func signupHandler(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
+	var mutation UserInsertMutation
 	err = graphqlClient.Mutate(context.Background(), &mutation, vars)
 	if err != nil {
 		log.Println("Signup error:", err)
-		http.Error(w, "Failed to insert user", http.StatusInternalServerError)
+		http.Error(w, "Email already exists or failed", http.StatusBadRequest)
 		return
 	}
 
@@ -137,23 +124,25 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ✅ Compatible with Hasura Action structure
 	var input struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Input struct {
+			Email    string `json:"email"`
+			Password string `json:"password"`
+		} `json:"input"`
 	}
-
 	err := json.NewDecoder(r.Body).Decode(&input)
-	if err != nil || input.Email == "" || input.Password == "" {
+	if err != nil || input.Input.Email == "" || input.Input.Password == "" {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
+	// Query the user by email
 	var query GetUserByEmailQuery
 	vars := map[string]interface{}{
-		"email": graphql.String(input.Email),
+		"email": graphql.String(input.Input.Email),
 	}
 
-	// Check if user exists
 	err = graphqlClient.Query(context.Background(), &query, vars)
 	if err != nil || len(query.Users) == 0 {
 		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
@@ -162,24 +151,35 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 
 	user := query.Users[0]
 
-	// Compare password
-	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password))
+	// Check the password
+	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Input.Password))
 	if err != nil {
 		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
 		return
 	}
 
+	// Generate the token for the user
 	token := generateToken(user.ID, user.Email)
 
+	// Return the token and user info, including the avatar (first letter of name)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"token": token,
 		"user": map[string]interface{}{
-			"id":    user.ID,
-			"email": user.Email,
-			"name":  user.Name,
+			"id":      user.ID,
+			"email":   user.Email,
+			"name":    user.Name,
+			"avatar":  getAvatar(user.Name), // Function to get first letter as avatar
 		},
 	})
+}
+
+// Helper function to get the first letter of the name as avatar
+func getAvatar(name string) string {
+	if len(name) > 0 {
+		return string(name[0]) // Get the first letter of the name
+	}
+	return "U" // Return "U" if the name is empty
 }
 
 func generateToken(userID, email string) string {

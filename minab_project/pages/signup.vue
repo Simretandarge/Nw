@@ -78,11 +78,18 @@ const handleSignup = async () => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        name: name.value,
-        email: email.value,
-        password: password.value,
+        input: {
+          // Wrapping the data inside 'input' as expected by backend
+          name: name.value,
+          email: email.value,
+          password: password.value,
+        },
       }),
     });
+
+    console.log("Name:", name.value);
+    console.log("Email:", email.value);
+    console.log("Password:", password.value);
 
     if (!response.ok) {
       const error = await response.text();
@@ -96,7 +103,7 @@ const handleSignup = async () => {
     // Optional: store token in localStorage
     localStorage.setItem("token", data.token);
 
-    router.push("/");
+    router.push("/"); // Redirect to home page after successful signup
   } catch (err) {
     console.error("Signup failed:", err);
     alert("❌ Signup failed: " + err.message);
