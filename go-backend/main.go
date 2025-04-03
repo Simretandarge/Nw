@@ -39,7 +39,7 @@ type users_insert_input struct {
 
 type UserInsertMutation struct {
 	InsertUsersOne struct {
-		ID string `json:"id"`
+		ID string `json:"id"` 
 	} `graphql:"insert_users_one(object: $object)"`
 }
 
@@ -58,6 +58,7 @@ func main() {
 	hasuraEndpoint = os.Getenv("HASURA_GRAPHQL_ENDPOINT")
 	hasuraAdminSecret = os.Getenv("HASURA_ADMIN_SECRET")
 
+	// Setup HTTP client with headers for Hasura Admin Secret
 	httpClient := &http.Client{
 		Transport: &transportWithHeaders{
 			headers: map[string]string{
@@ -68,7 +69,7 @@ func main() {
 	graphqlClient = graphql.NewClient(hasuraEndpoint, httpClient)
 
 	http.HandleFunc("/signup", enableCors(signupHandler))
-	http.HandleFunc("/login", enableCors(loginHandler)) // ✅ Action-ready login
+	http.HandleFunc("/login", enableCors(loginHandler)) // Action-ready login
 
 	log.Println("✅ Server running on http://localhost:8082")
 	http.ListenAndServe(":8082", nil)
@@ -123,7 +124,6 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ✅ Compatible with Hasura Action structure
 	var input struct {
 		Input struct {
 			Email    string `json:"email"`
@@ -136,7 +136,6 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Query the user by email
 	var query GetUserByEmailQuery
 	vars := map[string]interface{}{
 		"email": graphql.String(input.Input.Email),
@@ -150,17 +149,14 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 
 	user := query.Users[0]
 
-	// Check the password
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Input.Password))
 	if err != nil {
 		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
 		return
 	}
 
-	// Generate the token for the user
 	token := generateToken(user.ID, user.Email)
 
-	// Return the token and user info, including the avatar (first letter of name)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"token": token,
@@ -168,12 +164,11 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 			"id":      user.ID,
 			"email":   user.Email,
 			"name":    user.Name,
-			"avatar":  getAvatar(user.Name), // Function to get first letter as avatar
+			"avatar":  getAvatar(user.Name),
 		},
 	})
 }
 
-// Helper function to get the first letter of the name as avatar
 func getAvatar(name string) string {
 	if len(name) > 0 {
 		return string(name[0]) // Get the first letter of the name
